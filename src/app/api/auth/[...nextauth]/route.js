@@ -5,16 +5,16 @@ import * as mongoose from "mongoose";
 import { User } from "@/models/User";
 import NextAuth, { getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GithubProvider from "next-auth/providers/github";
 import GoogleProvider from "next-auth/providers/google";
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
 
 export const authOptions = {
-  secret: process.env.SECRET,
-  adapter: MongoDBAdapter(clientPromise),
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    GithubProvider({
+      clientId: process.env.GITHUB_ID,
+      clientSecret: process.env.GITHUB_SECRET,
     }),
     CredentialsProvider({
       name: "Credentials",
@@ -31,9 +31,9 @@ export const authOptions = {
         const email = credentials?.email;
         const password = credentials?.password;
 
-        mongoose.connect(process.env.MONGO_URL);
+        await mongoose.connect(process.env.MONGO_URL);
         const user = await User.findOne({ email });
-        const passwordOk = user && bcrypt.compareSync(password, user.password);
+        const passwordOk = await bcrypt.compare(password, user.password);
 
         if (passwordOk) {
           return user;
@@ -43,6 +43,23 @@ export const authOptions = {
       },
     }),
   ],
+  callbacks: {
+    async signIn({ user, account }) {
+      if (account.provider == "credentials") {
+        return true;
+      }
+      if (account.provider == "github") {
+        await mongoose.connect(process.env.MONGO_URL);
+        const existUser = await User.findOne({ email: user.email });
+        if (!existUser) {
+          const newUser = new User({ email: user.email });
+          await newUser.save();
+          return true;
+        }
+        return true;
+      }
+    },
+  },
 };
 
 export async function isAdmin() {
